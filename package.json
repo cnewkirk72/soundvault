@@ -9,7 +9,11 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "icons": "python3 src-tauri/icons/generate_icons.py",
+    "setup": "python3 -m pip install --user pillow && npm run icons",
+    "predev": "npm run icons --silent || true",
+    "prebuild": "npm run icons --silent || true"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.1.1",
