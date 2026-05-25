@@ -1,5 +1,16 @@
 //! .als parsing: gunzip + streaming XML, extracting SampleRef occurrences with
 //! their track + group context. Read-only against the source file.
+//!
+//! Implementation:
+//!
+//! - `flate2::read::GzDecoder` over the read-only File handle from
+//!   `ReadOnlyProject::open_als`.
+//! - `quick-xml::Reader` in streaming mode (no DOM).
+//! - We walk the event stream and maintain a stack of (tag, attributes,
+//!   relevant_metadata) frames so we know whether the current `<SampleRef>` is
+//!   inside an AudioClip / TakeLane / OriginalSimpler / etc.
+//! - Track + group hierarchy is reconstructed via `TrackGroupId Value=""`
+//!   references (collected during the first pass, joined into a path after).
 
 use crate::error::{ScanError, ScanResult};
 use crate::readonly::ReadOnlyProject;
@@ -11,17 +22,30 @@ use std::collections::HashMap;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
+/// One occurrence of a SampleRef inside a project. There may be many of these
+/// pointing to the same underlying sample file (different clips, take lanes,
+/// sampler slots).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SampleOccurrence {
+    /// The on-disk path Ableton currently uses (preferred for copy ops).
     pub path: PathBuf,
+    /// Filename only.
     pub filename: String,
+    /// File size declared by the .als (OriginalFileSize attribute).
     pub declared_size: Option<u64>,
+    /// CRC declared by the .als (OriginalCrc attribute).
     pub declared_crc: Option<u64>,
+    /// Original path before Ableton rehomed the sample (if available).
     pub original_path: Option<PathBuf>,
+    /// Track name that holds this sample reference (EffectiveName).
     pub track_name: Option<String>,
+    /// Group track path from root → containing track (joined by " > ").
     pub group_path: Vec<String>,
+    /// Project name (derived from the .als file stem).
     pub project_name: String,
+    /// Project root folder.
     pub project_root: PathBuf,
+    /// Context in which this SampleRef appeared.
     pub context: SampleContext,
 }
 
@@ -42,6 +66,7 @@ pub struct ProjectAnalysis {
     pub samples: Vec<SampleOccurrence>,
 }
 
+/// Parse a single .als file, returning every SampleRef occurrence with context.
 pub fn parse_project(project: &ReadOnlyProject) -> ScanResult<ProjectAnalysis> {
     let project_name = project
         .als_path()
@@ -85,13 +110,14 @@ pub fn parse_project(project: &ReadOnlyProject) -> ScanResult<ProjectAnalysis> {
     })
 }
 
+// --- Internals ---
+
 #[derive(Debug, Clone)]
 struct TrackFrame {
     id: String,
-    #[allow(dead_code)]
     kind: TrackKind,
     name: Option<String>,
-    parent_id: Option<String>,
+    parent_id: Option<String>, // None == top-level
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,11 +131,23 @@ enum TrackKind {
 struct ParseState {
     project_name: String,
     project_root: PathBuf,
+
+    // Track index — id -> frame. Built in order, used to compute group paths.
     tracks: HashMap<String, TrackFrame>,
+    // Track stack — innermost track holding the current cursor.
     track_stack: Vec<String>,
+
+    // Context stack: AudioClip / TakeLane / Sampler.
     context_stack: Vec<SampleContext>,
+
+    // We need to capture the EffectiveName of the *currently parsing* track.
     awaiting_track_name_for: Option<String>,
+
+    // Whether we're inside a Name block within a track (not at higher level).
     in_name_block: bool,
+
+    // SampleRef state. We accumulate fields inside a SampleRef and flush on
+    // </SampleRef>.
     in_sample_ref: bool,
     sample_depth: usize,
     in_source_context: usize,
@@ -144,19 +182,27 @@ impl ParseState {
     }
 
     fn finalize(&mut self, _als_path: &Path) {
+        // For every accumulated SampleOccurrence, fix group_path now that the
+        // full track map is known. We must avoid holding a mutable borrow of
+        // self.samples while also reading self.tracks, so we resolve into
+        // owned values first.
         let resolved: Vec<(Vec<String>, Option<String>)> = self
             .samples
             .iter()
             .map(|s| {
                 if let Some(track_id) = Self::track_for_sample_id(s) {
                     let path = self.compute_group_path(&track_id);
-                    let track_name = self.tracks.get(&track_id).and_then(|t| t.name.clone());
+                    let track_name = self
+                        .tracks
+                        .get(&track_id)
+                        .and_then(|t| t.name.clone());
                     (path, track_name)
                 } else {
                     (s.group_path.clone(), s.track_name.clone())
                 }
             })
             .collect();
+
         for (s, (path, name)) in self.samples.iter_mut().zip(resolved.into_iter()) {
             s.group_path = path;
             if s.track_name.is_none() {
@@ -166,6 +212,8 @@ impl ParseState {
     }
 
     fn track_for_sample_id(s: &SampleOccurrence) -> Option<String> {
+        // group_path[0] is the innermost track id while parsing, prefixed by
+        // "__id:". We replace it with the human path in finalize().
         s.group_path
             .first()
             .and_then(|s| s.strip_prefix("__id:"))
@@ -179,7 +227,7 @@ impl ParseState {
         while let Some(id) = cur {
             guard += 1;
             if guard > 64 {
-                break;
+                break; // safety
             }
             match self.tracks.get(&id) {
                 Some(frame) => {
@@ -200,6 +248,8 @@ impl ParseState {
     fn current_track_id(&self) -> Option<&String> {
         self.track_stack.last()
     }
+
+    // ---
 
     fn on_start(&mut self, e: &quick_xml::events::BytesStart) -> ScanResult<()> {
         let local = local_name(e);
@@ -232,9 +282,15 @@ impl ParseState {
                     self.in_name_block = true;
                 }
             }
-            "AudioClip" => self.context_stack.push(SampleContext::AudioClip),
-            "TakeLane" => self.context_stack.push(SampleContext::TakeLane),
-            "OriginalSimpler" => self.context_stack.push(SampleContext::Sampler),
+            "AudioClip" => {
+                self.context_stack.push(SampleContext::AudioClip);
+            }
+            "TakeLane" => {
+                self.context_stack.push(SampleContext::TakeLane);
+            }
+            "OriginalSimpler" => {
+                self.context_stack.push(SampleContext::Sampler);
+            }
             "SampleRef" => {
                 self.in_sample_ref = true;
                 self.sample_depth = 1;
@@ -259,6 +315,7 @@ impl ParseState {
 
     fn on_empty(&mut self, e: &quick_xml::events::BytesStart) -> ScanResult<()> {
         let local = local_name(e);
+        // Empty elements carry value via the Value attribute in .als XML.
         match local.as_str() {
             "EffectiveName" => {
                 if let (Some(id), Some(name)) =
@@ -276,6 +333,7 @@ impl ParseState {
                     (self.awaiting_track_name_for.clone(), attr(e, "Value"))
                 {
                     if let Some(t) = self.tracks.get_mut(&track_id) {
+                        // -1 means "top level"; everything else is a parent track id.
                         if val.trim() != "-1" && !val.is_empty() {
                             t.parent_id = Some(val);
                         } else {
@@ -287,7 +345,9 @@ impl ParseState {
             "Path" if self.in_sample_ref => {
                 if let Some(v) = attr(e, "Value") {
                     if v.is_empty() {
+                        // skip
                     } else if self.in_source_context > 0 {
+                        // OriginalFileRef path
                         if self.current_source_path.is_none() {
                             self.current_source_path = Some(PathBuf::from(v));
                         }
@@ -330,7 +390,9 @@ impl ParseState {
                 self.awaiting_track_name_for = self.track_stack.last().cloned();
                 self.in_name_block = false;
             }
-            "Name" => self.in_name_block = false,
+            "Name" => {
+                self.in_name_block = false;
+            }
             "AudioClip" => {
                 if matches!(self.context_stack.last(), Some(SampleContext::AudioClip)) {
                     self.context_stack.pop();
@@ -351,7 +413,9 @@ impl ParseState {
                     self.in_source_context -= 1;
                 }
             }
-            "SampleRef" if self.in_sample_ref => self.flush_sample_ref(),
+            "SampleRef" if self.in_sample_ref => {
+                self.flush_sample_ref();
+            }
             _ => {
                 if self.in_sample_ref && self.sample_depth > 0 {
                     self.sample_depth -= 1;
@@ -380,18 +444,20 @@ impl ParseState {
                 .unwrap_or_else(|| {
                     *self.context_stack.last().unwrap_or(&SampleContext::Unknown)
                 });
+
             let group_path_marker = self
                 .current_track_id()
                 .map(|t| vec![format!("__id:{}", t)])
                 .unwrap_or_default();
+
             self.samples.push(SampleOccurrence {
                 path,
                 filename,
                 declared_size: self.current_file_ref_size,
                 declared_crc: self.current_file_ref_crc,
                 original_path: self.current_source_path.clone(),
-                track_name: None,
-                group_path: group_path_marker,
+                track_name: None,            // resolved in finalize()
+                group_path: group_path_marker, // resolved in finalize()
                 project_name: self.project_name.clone(),
                 project_root: self.project_root.clone(),
                 context,
@@ -416,13 +482,16 @@ impl ParseState {
 fn local_name(e: &quick_xml::events::BytesStart) -> String {
     String::from_utf8_lossy(e.local_name().as_ref()).into_owned()
 }
+
 fn local_name_end(e: &quick_xml::events::BytesEnd) -> String {
     String::from_utf8_lossy(e.local_name().as_ref()).into_owned()
 }
+
 fn attr(e: &quick_xml::events::BytesStart, key: &str) -> Option<String> {
     for a in e.attributes().with_checks(false).flatten() {
         let k = String::from_utf8_lossy(a.key.as_ref()).into_owned();
         if k == key {
+            // Decode XML entities (&amp; &lt; &gt; &quot; &apos; and numeric refs).
             let raw = String::from_utf8_lossy(&a.value);
             return Some(
                 quick_xml::escape::unescape(&raw)
@@ -489,6 +558,7 @@ mod tests {
         std::fs::create_dir_all(&proj).unwrap();
         let als = proj.join("MyProj.als");
         write_gz_als(&als, MINIMAL_XML);
+
         let ro = ReadOnlyProject::new(&proj, &als);
         let result = parse_project(&ro).unwrap();
         assert_eq!(result.samples.len(), 1);

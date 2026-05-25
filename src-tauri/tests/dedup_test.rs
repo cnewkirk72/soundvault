@@ -1,4 +1,5 @@
-//! Dedup tests — verify copies at different paths collapse into one UniqueSample.
+//! Dedup tests — verify that copies of the same file at different paths
+//! collapse into one UniqueSample via content hashing.
 
 use std::fs;
 use std::path::PathBuf;
@@ -11,11 +12,19 @@ use soundvault_lib::dedup::{
 };
 use soundvault_lib::parse::{SampleContext, SampleOccurrence};
 
-fn make_occurrence(path: PathBuf, project: &str, category: &str) -> ClassifiedOccurrence {
+fn make_occurrence(
+    path: PathBuf,
+    project: &str,
+    category: &str,
+) -> ClassifiedOccurrence {
     ClassifiedOccurrence {
         occurrence: SampleOccurrence {
             path: path.clone(),
-            filename: path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string(),
+            filename: path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string(),
             declared_size: None,
             declared_crc: None,
             original_path: None,
@@ -33,11 +42,12 @@ fn make_occurrence(path: PathBuf, project: &str, category: &str) -> ClassifiedOc
 fn identical_files_at_different_paths_collapse() {
     let tmp = tempdir().unwrap();
     let p1 = tmp.path().join("a/foo.wav");
-    let p2 = tmp.path().join("b/foo.wav");
+    let p2 = tmp.path().join("b/foo.wav"); // same content, same name, different path
     fs::create_dir_all(p1.parent().unwrap()).unwrap();
     fs::create_dir_all(p2.parent().unwrap()).unwrap();
     fs::write(&p1, b"hello world").unwrap();
     fs::write(&p2, b"hello world").unwrap();
+
     let occurrences = vec![
         make_occurrence(p1, "ProjectA", "Drums / Kicks & Bassdrums"),
         make_occurrence(p2, "ProjectB", "Drums / Kicks & Bassdrums"),
@@ -56,6 +66,7 @@ fn multiple_uses_in_one_project_count_as_one_project() {
     let tmp = tempdir().unwrap();
     let p = tmp.path().join("foo.wav");
     fs::write(&p, b"abc").unwrap();
+
     let occurrences = vec![
         make_occurrence(p.clone(), "ProjectX", "Drums / Kicks & Bassdrums"),
         make_occurrence(p.clone(), "ProjectX", "Drums / Kicks & Bassdrums"),
@@ -71,7 +82,11 @@ fn multiple_uses_in_one_project_count_as_one_project() {
 
 #[test]
 fn missing_files_dropped_by_default() {
-    let occurrences = vec![make_occurrence(PathBuf::from("/nope/missing.wav"), "ProjectZ", "Drums / Kicks & Bassdrums")];
+    let occurrences = vec![make_occurrence(
+        PathBuf::from("/nope/missing.wav"),
+        "ProjectZ",
+        "Drums / Kicks & Bassdrums",
+    )];
     let cancel = Arc::new(CancellationToken::new());
     let flags = FilterFlags::default();
     let uniques = dedup_and_count(filter_artifact_folders(occurrences, &flags), &flags, &cancel, |_, _| {});
@@ -80,7 +95,11 @@ fn missing_files_dropped_by_default() {
 
 #[test]
 fn missing_files_kept_when_opted_in() {
-    let occurrences = vec![make_occurrence(PathBuf::from("/nope/missing.wav"), "ProjectZ", "Drums / Kicks & Bassdrums")];
+    let occurrences = vec![make_occurrence(
+        PathBuf::from("/nope/missing.wav"),
+        "ProjectZ",
+        "Drums / Kicks & Bassdrums",
+    )];
     let cancel = Arc::new(CancellationToken::new());
     let mut flags = FilterFlags::default();
     flags.include_missing = true;

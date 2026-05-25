@@ -28,9 +28,6 @@ A desktop app that scans a folder of Ableton Live projects, identifies your most
 # Install Node deps
 npm install
 
-# Generate icons (one-time on fresh checkout)
-python3 src-tauri/icons/generate_icons.py
-
 # Run in dev mode (hot reload front + Rust)
 npm run tauri dev
 
@@ -40,23 +37,40 @@ npm run tauri build
 
 ### macOS notarization
 
-Set the following env vars before `npm run tauri build`:
+Set the following env vars (CI or local) before `npm run tauri build`:
 
 ```
 APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)"
 APPLE_ID="you@example.com"
-APPLE_PASSWORD="@keychain:AC_PASSWORD"
+APPLE_PASSWORD="@keychain:AC_PASSWORD"   # app-specific password
 APPLE_TEAM_ID="TEAMID"
 ```
 
-Tauri signs the `.app`, builds a `.dmg`, and submits for notarization automatically when these are present. See `src-tauri/tauri.conf.json` → `bundle.macOS` and the embedded `entitlements.plist` for the hardened-runtime config.
+Tauri will sign the `.app`, build a `.dmg`, and submit for notarization automatically when these are present. See `src-tauri/tauri.conf.json` → `bundle.macOS` and the embedded `entitlements.plist` for the hardened-runtime config.
 
 ## Read-only guarantee
 
+The Rust API surface is shaped so that project content is unreachable through any write-capable path:
+
 1. All project file opens go through `readonly::ReadOnlyProject::open`, which uses `OpenOptions::new().read(true).write(false)`.
-2. The output folder is validated at config-time to ensure it is **not** the same as, or a descendant of, any scanned project root.
-3. `copy::copy_samples` writes only to the output root via `fs::copy` (never `rename`, never delete).
-4. The CI test in `src-tauri/tests/readonly_test.rs` snapshots filesystem mtimes of a fixture project before/after a full scan and asserts equality.
+2. `discover::discover_projects` only walks directories and reads `.als` headers; it never holds file handles past parsing.
+3. The output folder is validated at config-time to ensure it is **not** the same as, or a descendant of, any scanned project root.
+4. `copy::copy_samples` writes only to the output root via `fs::copy` (never `rename`, never delete).
+5. The CI test in `src-tauri/tests/readonly_test.rs` snapshots filesystem mtimes of a fixture project before/after a full scan and asserts equality.
+
+## Layout
+
+```
+soundvault/
+  package.json
+  vite.config.ts
+  tailwind.config.js
+  src/                       # React frontend
+  src-tauri/                 # Rust backend
+    src/                     # Rust modules
+    resources/taxonomy.json  # Default taxonomy
+    tests/                   # Integration tests
+```
 
 ## License
 

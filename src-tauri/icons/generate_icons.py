@@ -4,7 +4,7 @@ Generate Soundvault app icons.
 
 Design: a folder outline in soft silver with a faint violet glow, an audio
 circle inset, and a brightly glowing purple waveform inside it. Dark near-black
-rounded-square background.
+rounded-square background. Macworld-style.
 
 Output:
   32x32.png, 128x128.png, 128x128@2x.png, icon.png (1024), icon.ico, icon.icns,
@@ -41,20 +41,23 @@ SIZES_PNG = {
 
 # --- Palette -------------------------------------------------------------
 
-BG_TOP = (22, 22, 28)
-BG_BOTTOM = (8, 8, 10)
+BG_TOP = (22, 22, 28)        # warm near-black at top
+BG_BOTTOM = (8, 8, 10)       # blacker at bottom
 
-SILVER = (225, 226, 235)
+SILVER = (225, 226, 235)     # folder + circle outlines
 SILVER_HIGHLIGHT = (245, 246, 252)
 
-PURPLE_BAR = (184, 122, 255)
-PURPLE_BAR_HOT = (212, 168, 255)
-PURPLE_GLOW = (138, 72, 255)
+# Waveform bars: vivid violet with strong neon glow.
+PURPLE_BAR = (184, 122, 255)         # bar fill
+PURPLE_BAR_HOT = (212, 168, 255)     # near-white inner highlight on bars
+PURPLE_GLOW = (138, 72, 255)         # halo color
 
 
 # --- Helpers -------------------------------------------------------------
 
-def make_glow(alpha_mask, color, blur, opacity=1.0):
+def make_glow(alpha_mask: Image.Image, color: tuple, blur: float,
+              opacity: float = 1.0) -> Image.Image:
+    """Return an RGBA glow halo from an alpha mask."""
     s = alpha_mask.size
     glow = Image.new("RGBA", s, color + (0,))
     solid = Image.new("RGBA", s, color + (255,))
@@ -66,13 +69,14 @@ def make_glow(alpha_mask, color, blur, opacity=1.0):
     return glow
 
 
-def fill_from_mask(mask, color):
+def fill_from_mask(mask: Image.Image, color: tuple) -> Image.Image:
+    """Return an RGBA image painted in `color` using `mask` as the alpha."""
     rgba = Image.new("RGBA", mask.size, color + (255,))
     rgba.putalpha(mask)
     return rgba
 
 
-def gradient_bg(size):
+def gradient_bg(size: int) -> Image.Image:
     img = Image.new("RGB", (size, size), BG_TOP)
     d = ImageDraw.Draw(img)
     for y in range(size):
@@ -84,7 +88,7 @@ def gradient_bg(size):
     return img.convert("RGBA")
 
 
-def rounded_square_mask(size, corner_frac=0.22):
+def rounded_square_mask(size: int, corner_frac: float = 0.22) -> Image.Image:
     mask = Image.new("L", (size, size), 0)
     corner = max(int(size * corner_frac), 1)
     ImageDraw.Draw(mask).rounded_rectangle((0, 0, size, size), corner, fill=255)
@@ -93,7 +97,8 @@ def rounded_square_mask(size, corner_frac=0.22):
 
 # --- Shapes --------------------------------------------------------------
 
-def folder_outline_mask(s, stroke):
+def folder_outline_mask(s: int, stroke: int) -> Image.Image:
+    """An L-mode mask containing just the folder outline."""
     margin_x = s * 0.18
     folder_top = s * 0.26
     folder_bottom = s * 0.82
@@ -106,17 +111,20 @@ def folder_outline_mask(s, stroke):
     r_out = max(int(s * 0.038), 2)
     r_in = max(r_out - stroke, 1)
 
+    # Outer silhouette: body + tab (union).
     outer = Image.new("L", (s, s), 0)
     od = ImageDraw.Draw(outer)
     od.rounded_rectangle(
         (folder_left, body_top, folder_right, folder_bottom),
         radius=r_out, fill=255,
     )
+    # Tab extends down past body_top so the join is seamless.
     od.rounded_rectangle(
         (folder_left, folder_top, tab_right, body_top + r_out),
         radius=r_out, fill=255,
     )
 
+    # Inner silhouette (smaller by `stroke`).
     inner = Image.new("L", (s, s), 0)
     idr = ImageDraw.Draw(inner)
     idr.rounded_rectangle(
@@ -132,7 +140,9 @@ def folder_outline_mask(s, stroke):
     return ImageChops.subtract(outer, inner)
 
 
-def circle_ring_mask(s, cx, cy, radius, stroke, gap_angle_deg=28.0):
+def circle_ring_mask(s: int, cx: float, cy: float, radius: float, stroke: int,
+                     gap_angle_deg: float = 28.0) -> Image.Image:
+    """A ring (hollow circle) with a small gap on the right side."""
     outer = Image.new("L", (s, s), 0)
     ImageDraw.Draw(outer).ellipse(
         (cx - radius, cy - radius, cx + radius, cy + radius), fill=255,
@@ -144,8 +154,10 @@ def circle_ring_mask(s, cx, cy, radius, stroke, gap_angle_deg=28.0):
     )
     ring = ImageChops.subtract(outer, inner)
 
+    # Cut a gap on the right (centered at angle 0, ~±gap_angle/2 degrees).
     gap = Image.new("L", (s, s), 0)
     gd = ImageDraw.Draw(gap)
+    # Pieslice mask covering the gap angle.
     gd.pieslice(
         (cx - radius - stroke, cy - radius - stroke,
          cx + radius + stroke, cy + radius + stroke),
@@ -155,9 +167,11 @@ def circle_ring_mask(s, cx, cy, radius, stroke, gap_angle_deg=28.0):
     return ImageChops.subtract(ring, gap)
 
 
-def waveform_mask(s, cx, cy):
+def waveform_mask(s: int, cx: float, cy: float) -> Image.Image:
+    """5 vertical bars centered at (cx, cy) — middle bar tallest, rounded caps."""
     bar_w = s * 0.030
     bar_gap = s * 0.022
+    # Heights as fractions of icon size — symmetric, middle tallest.
     bar_heights_frac = [0.07, 0.115, 0.165, 0.115, 0.07]
     bar_count = len(bar_heights_frac)
 
@@ -177,14 +191,16 @@ def waveform_mask(s, cx, cy):
 
 # --- Compose -------------------------------------------------------------
 
-def make_icon(size):
+def make_icon(size: int) -> Image.Image:
     s = size
     out = Image.new("RGBA", (s, s), (0, 0, 0, 0))
 
+    # Background with rounded corners.
     bg = gradient_bg(s)
     rcorner = rounded_square_mask(s, corner_frac=0.22)
     out.paste(bg, (0, 0), rcorner)
 
+    # Subtle ambient violet vignette inside the icon body.
     vignette = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     vd = ImageDraw.Draw(vignette)
     vd.ellipse(
@@ -196,9 +212,11 @@ def make_icon(size):
     vignette.putalpha(ImageChops.multiply(va, rcorner))
     out.alpha_composite(vignette)
 
+    # --- Folder outline ----------------------------------------------------
     folder_stroke = max(int(s * 0.030), 2)
     folder_mask = folder_outline_mask(s, folder_stroke)
 
+    # --- Audio circle inside folder ---------------------------------------
     circle_cx = s * 0.50
     circle_cy = s * 0.585
     circle_r = s * 0.175
@@ -209,6 +227,7 @@ def make_icon(size):
 
     silver_mask = ImageChops.add(folder_mask, circle_mask)
 
+    # Outer purple glow halo behind silver shapes.
     silver_halo = make_glow(silver_mask, PURPLE_GLOW,
                             blur=s * 0.026, opacity=0.55)
     out.alpha_composite(silver_halo)
@@ -216,7 +235,9 @@ def make_icon(size):
                                   blur=s * 0.010, opacity=0.45)
     out.alpha_composite(silver_halo_close)
 
+    # Silver outline itself, with a tiny inner highlight gradient for sheen.
     silver_layer = fill_from_mask(silver_mask, SILVER)
+    # Highlight overlay: brighten top of strokes slightly.
     highlight = Image.new("L", (s, s), 0)
     hd = ImageDraw.Draw(highlight)
     for y in range(s):
@@ -227,8 +248,10 @@ def make_icon(size):
     silver_layer = Image.alpha_composite(silver_layer, sheen)
     out.alpha_composite(silver_layer)
 
+    # --- Waveform bars (purple neon) --------------------------------------
     wave_mask = waveform_mask(s, circle_cx, circle_cy)
 
+    # Stacked glows: far → mid → close.
     wave_glow_far = make_glow(wave_mask, PURPLE_GLOW,
                               blur=s * 0.07, opacity=0.70)
     wave_glow_mid = make_glow(wave_mask, PURPLE_GLOW,
@@ -236,6 +259,7 @@ def make_icon(size):
     wave_glow_near = make_glow(wave_mask, PURPLE_BAR,
                                blur=s * 0.010, opacity=0.85)
     bars = fill_from_mask(wave_mask, PURPLE_BAR)
+    # Inner hot highlight on the bars themselves.
     inner_hot_mask = wave_mask.filter(ImageFilter.GaussianBlur(radius=s * 0.005))
     inner_hot_mask = ImageChops.subtract(
         wave_mask, inner_hot_mask.point(lambda v: max(0, v - 80))
@@ -249,10 +273,14 @@ def make_icon(size):
     wave_composite.alpha_composite(bars)
     wave_composite.alpha_composite(bars_highlight)
 
+    # Mask all the waveform glow to within the icon rounded square (so
+    # the soft halo doesn't escape into the transparent corners).
     wa = wave_composite.split()[-1]
     wave_composite.putalpha(ImageChops.multiply(wa, rcorner))
     out.alpha_composite(wave_composite)
 
+    # --- Outer rim soft shadow (just inside the rounded square) -----------
+    # Faint inner shadow for depth.
     rim = Image.new("L", (s, s), 0)
     rd = ImageDraw.Draw(rim)
     rd.rounded_rectangle((0, 0, s, s),
@@ -269,7 +297,7 @@ def make_icon(size):
 
 # --- File output ---------------------------------------------------------
 
-def save_pngs():
+def save_pngs() -> dict:
     icons_at = {}
     for name, size in SIZES_PNG.items():
         if size not in icons_at:
@@ -279,7 +307,7 @@ def save_pngs():
     return icons_at
 
 
-def save_ico(icons):
+def save_ico(icons: dict):
     needed = [16, 32, 48, 64, 128, 256]
     rendered = {sz: icons.get(sz) or make_icon(sz) for sz in needed}
     rendered[needed[0]].save(
@@ -291,7 +319,7 @@ def save_ico(icons):
     print("wrote icon.ico (multi-res)")
 
 
-def save_icns(icons):
+def save_icns(icons: dict):
     pieces = [
         (b"ic04", make_icon(16)),
         (b"ic05", make_icon(32)),
@@ -317,7 +345,7 @@ def save_icns(icons):
     print(f"wrote icon.icns ({total} bytes)")
 
 
-def _to_png_bytes(img):
+def _to_png_bytes(img: Image.Image) -> bytes:
     from io import BytesIO
     buf = BytesIO()
     img.save(buf, format="PNG")

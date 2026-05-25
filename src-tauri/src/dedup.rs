@@ -24,16 +24,21 @@ pub struct UniqueSample {
     pub filename: String,
     pub file_size: Option<u64>,
     pub content_hash: Option<String>,
+    /// Path the sample was sourced from on disk (we copy from canonical_path).
     pub original_path: Option<PathBuf>,
     pub track_name: Option<String>,
     pub category: Option<String>,
     pub project_count: u32,
     pub clip_count: u32,
     pub projects: Vec<String>,
+    /// True if the file does not exist on disk (and we did not opt-in to "missing").
     pub missing: bool,
+    /// True if the sample lives inside Ableton's factory library (Live Pack).
     pub factory: bool,
 }
 
+/// Pair a parsed SampleOccurrence with its classified category. Uncategorized
+/// occurrences are not present in this input.
 #[derive(Debug, Clone)]
 pub struct ClassifiedOccurrence {
     pub occurrence: SampleOccurrence,
@@ -48,6 +53,8 @@ pub struct FilterFlags {
     pub include_missing: bool,
 }
 
+/// Pre-dedup filter: drop occurrences whose path falls under Ableton's artifact
+/// folders unless the user opted in.
 pub fn filter_artifact_folders(
     occurrences: Vec<ClassifiedOccurrence>,
     flags: &FilterFlags,
@@ -73,9 +80,11 @@ pub fn is_excluded_artifact(path: &Path, flags: &FilterFlags) -> bool {
     let has_component = |a: &str| -> bool { comps.iter().any(|c| c.eq_ignore_ascii_case(a)) };
     let is_in_samples = comps.iter().any(|c| c.eq_ignore_ascii_case("Samples"));
 
+    // Freeze
     if is_in_samples && has_subpath("Processed", "Freeze") && !flags.include_freeze {
         return true;
     }
+    // Processed (excluding Freeze, which is handled above)
     if is_in_samples
         && comps
             .windows(2)
@@ -85,6 +94,7 @@ pub fn is_excluded_artifact(path: &Path, flags: &FilterFlags) -> bool {
     {
         return true;
     }
+    // Recorded
     if is_in_samples && has_component("Recorded")
         && comps
             .windows(2)
@@ -96,6 +106,7 @@ pub fn is_excluded_artifact(path: &Path, flags: &FilterFlags) -> bool {
     false
 }
 
+/// Cluster occurrences into unique samples.
 pub fn dedup_and_count(
     occurrences: Vec<ClassifiedOccurrence>,
     flags: &FilterFlags,
@@ -105,11 +116,15 @@ pub fn dedup_and_count(
     let total = occurrences.len() as u64;
     let mut processed: u64 = 0;
 
+    // Bucket by (filename lowercase, declared/actual file size).
+    // For the first pass, we need actual file size — call once per unique
+    // canonical path.
     let mut size_cache: HashMap<PathBuf, Option<u64>> = HashMap::new();
     let mut canonical_cache: HashMap<PathBuf, PathBuf> = HashMap::new();
 
     #[derive(Default)]
     struct Bucket {
+        // canonical_path -> aggregated data
         groups: Vec<UniqueSample>,
     }
 
@@ -139,13 +154,19 @@ pub fn dedup_and_count(
         let missing = !exists;
 
         if missing && !flags.include_missing {
+            // Drop this occurrence — can't copy what isn't there.
             continue;
         }
 
         let key = (c.occurrence.filename.to_lowercase(), size);
         let bucket = buckets.entry(key).or_default();
 
-        if let Some(g) = bucket.groups.iter_mut().find(|g| g.canonical_path == canonical) {
+        // Look for an existing group: same canonical path = certain match.
+        if let Some(g) = bucket
+            .groups
+            .iter_mut()
+            .find(|g| g.canonical_path == canonical)
+        {
             merge_into(g, &c);
             continue;
         }
@@ -172,6 +193,7 @@ pub fn dedup_and_count(
             if matched {
                 continue;
             }
+            // New unique sample, with hash already computed.
             bucket.groups.push(UniqueSample {
                 canonical_path: canonical.clone(),
                 filename: c.occurrence.filename.clone(),
@@ -187,6 +209,7 @@ pub fn dedup_and_count(
                 factory: is_factory_path(&canonical),
             });
         } else {
+            // First-in-bucket OR missing file: don't bother hashing yet.
             bucket.groups.push(UniqueSample {
                 canonical_path: canonical.clone(),
                 filename: c.occurrence.filename.clone(),
@@ -208,11 +231,15 @@ pub fn dedup_and_count(
 
     on_progress(total, total);
 
+    // Flatten all buckets.
     let mut out: Vec<UniqueSample> = buckets
         .into_values()
         .flat_map(|b| b.groups.into_iter())
         .collect();
 
+    // Multiple SampleRefs in the same project count as one project occurrence;
+    // we deduplicate `projects` already during merge_into. clip_count is the
+    // total raw count.
     for u in &mut out {
         let unique: BTreeSet<String> = u.projects.iter().cloned().collect();
         u.projects = unique.into_iter().collect();
@@ -227,6 +254,7 @@ fn merge_into(u: &mut UniqueSample, c: &ClassifiedOccurrence) {
     if !u.projects.contains(&c.occurrence.project_name) {
         u.projects.push(c.occurrence.project_name.clone());
     }
+    // If we didn't have a track name yet, take the first one we see.
     if u.track_name.is_none() {
         u.track_name = c.occurrence.track_name.clone();
     }

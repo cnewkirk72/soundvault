@@ -39,7 +39,11 @@ time = { version = "0.3", features = ["serde", "formatting", "macros"] }
 unicode-normalization = "0.1"
 dunce = "1.0"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# macOS-specific niceties (Finder integration via opener plugin handles this).
+
 [features]
+# Default feature set. Custom protocol is enabled in tauri.conf.json.
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 

@@ -17,6 +17,9 @@ pub struct CopiedSample {
     pub clip_count: u32,
 }
 
+/// Copy every sample in the report into a taxonomy-mirroring tree under
+/// `output_root`. Returns the list of copied samples. Emits progress via the
+/// supplied callback.
 pub fn copy_samples(
     report: &[CategoryReport],
     output_root: &Path,
@@ -29,6 +32,8 @@ pub fn copy_samples(
     let total: u32 = report.iter().map(|c| c.samples.len() as u32).sum();
     let mut copied_n: u32 = 0;
     let mut copied: Vec<CopiedSample> = Vec::with_capacity(total as usize);
+
+    // Track filename collisions per destination directory.
     let mut used: HashSet<PathBuf> = HashSet::new();
 
     for cat in report {
@@ -48,6 +53,9 @@ pub fn copy_samples(
                 continue;
             }
             let dest = resolve_collision(&dir, &s.filename, &mut used);
+            // Skip if a file at dest already exists on disk from a prior run
+            // and has matching content hash (we don't recompute — just leave
+            // the existing file alone).
             if dest.exists() {
                 copied_n += 1;
                 on_progress(copied_n, total, &s.filename);
@@ -68,6 +76,7 @@ pub fn copy_samples(
     Ok(copied)
 }
 
+/// Write a `manifest.json` at `output_root`. Minimal, human-readable.
 pub fn write_manifest(
     output_root: &Path,
     report: &AnalysisReport,
@@ -105,6 +114,7 @@ pub fn write_manifest(
 fn joined_components(components: &[String]) -> PathBuf {
     let mut p = PathBuf::new();
     for c in components {
+        // Sanitize for filesystem safety — replace path separators in names.
         let safe = c.replace(['/', '\\'], "_");
         p.push(safe);
     }
@@ -117,6 +127,7 @@ fn resolve_collision(dir: &Path, filename: &str, used: &mut HashSet<PathBuf>) ->
         used.insert(candidate.clone());
         return candidate;
     }
+    // Need suffixing.
     let (stem, ext) = split_filename(filename);
     let mut n: u32 = 2;
     loop {
@@ -132,6 +143,7 @@ fn resolve_collision(dir: &Path, filename: &str, used: &mut HashSet<PathBuf>) ->
         }
         n += 1;
         if n > 99999 {
+            // Extreme safety: append a random tail
             let p = dir.join(format!("{} ({}-{}).{}", stem, n, std::process::id(), ext));
             used.insert(p.clone());
             return p;
@@ -141,8 +153,16 @@ fn resolve_collision(dir: &Path, filename: &str, used: &mut HashSet<PathBuf>) ->
 
 fn split_filename(name: &str) -> (String, String) {
     let p = Path::new(name);
-    let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string();
-    let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("").to_string();
+    let stem = p
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(name)
+        .to_string();
+    let ext = p
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_string();
     (stem, ext)
 }
 

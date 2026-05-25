@@ -32,12 +32,14 @@ export default function App() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [config, setConfig] = useState<ScanConfig | null>(null);
 
+  // Apply theme by toggling `dark` class on root.
   useEffect(() => {
     const root = document.documentElement;
     if (theme === "dark") root.classList.add("dark");
     else root.classList.remove("dark");
   }, [theme]);
 
+  // Load taxonomy + version on mount.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -55,6 +57,7 @@ export default function App() {
     };
   }, []);
 
+  // Subscribe to progress events.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     (async () => {

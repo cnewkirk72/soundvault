@@ -19,6 +19,7 @@ export function truncateMiddle(path: string, max = 60): string {
     const tail = path.slice(path.length - Math.floor(max / 2) + 1);
     return `${head}…${tail}`;
   }
+  // Keep first 1–2 components + ellipsis + last 2 components, trim further if needed.
   const head = parts.slice(0, 2).join(sep);
   const tail = parts.slice(-2).join(sep);
   const combined = `${head}${sep}…${sep}${tail}`;

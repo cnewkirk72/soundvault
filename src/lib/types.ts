@@ -1,6 +1,7 @@
 // TypeScript mirrors of the Rust serde structs in src-tauri/src/.
 
 export type MatchMode = "use_groups" | "auto_detect" | "manual";
+
 export type Tiebreaker = "project_then_clip" | "clip_then_project";
 
 export type ScanSource =
@@ -11,6 +12,7 @@ export interface ManualKeywords {
   per_category: Record<string, string[]>;
 }
 
+// Wire shape — matches Rust `#[serde(rename_all = "snake_case")]` `ScanSource`.
 export type ScanSourceWire =
   | { root: string }
   | { projects: string[] };
@@ -77,6 +79,7 @@ export interface AnalysisReport {
   run_timestamp: string;
 }
 
+// Scan progress event variants. The Rust enum is tagged with `kind`.
 export type ScanEvent =
   | { kind: "discovery_started"; root: string }
   | { kind: "project_found"; path: string; total: number }

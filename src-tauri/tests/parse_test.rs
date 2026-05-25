@@ -1,4 +1,5 @@
-//! End-to-end parse tests covering AudioClip, TakeLane, and Sampler contexts.
+//! End-to-end parse tests against synthetic .als fixtures covering the three
+//! SampleRef contexts: AudioClip, TakeLane, and Sampler.
 
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -17,28 +18,76 @@ fn write_gz_als(path: &Path, xml: &str) {
     enc.finish().unwrap();
 }
 
-const NESTED_GROUPS_XML: &str = r#"<?xml version="1.0"?><Ableton><LiveSet><Tracks>
-  <GroupTrack Id="100"><Name><EffectiveName Value="DRUMS"/></Name><TrackGroupId Value="-1"/></GroupTrack>
-  <GroupTrack Id="110"><Name><EffectiveName Value="Snares, Claps, &amp; Rims"/></Name><TrackGroupId Value="100"/></GroupTrack>
-  <GroupTrack Id="111"><Name><EffectiveName Value="CLAP"/></Name><TrackGroupId Value="110"/></GroupTrack>
-  <AudioTrack Id="200"><Name><EffectiveName Value="my clap track"/></Name><TrackGroupId Value="111"/>
-    <AudioClip><SampleRef><FileRef><Path Value="/x/clap.wav"/><OriginalFileSize Value="100"/></FileRef></SampleRef></AudioClip>
-  </AudioTrack>
-</Tracks></LiveSet></Ableton>"#;
+const NESTED_GROUPS_XML: &str = r#"<?xml version="1.0"?>
+<Ableton>
+  <LiveSet>
+    <Tracks>
+      <GroupTrack Id="100"><Name><EffectiveName Value="DRUMS"/></Name><TrackGroupId Value="-1"/></GroupTrack>
+      <GroupTrack Id="110"><Name><EffectiveName Value="Snares, Claps, &amp; Rims"/></Name><TrackGroupId Value="100"/></GroupTrack>
+      <GroupTrack Id="111"><Name><EffectiveName Value="CLAP"/></Name><TrackGroupId Value="110"/></GroupTrack>
+      <AudioTrack Id="200">
+        <Name><EffectiveName Value="my clap track"/></Name>
+        <TrackGroupId Value="111"/>
+        <AudioClip>
+          <SampleRef>
+            <FileRef>
+              <Path Value="/x/clap.wav"/>
+              <OriginalFileSize Value="100"/>
+            </FileRef>
+          </SampleRef>
+        </AudioClip>
+      </AudioTrack>
+    </Tracks>
+  </LiveSet>
+</Ableton>"#;
 
-const TAKE_LANE_XML: &str = r#"<?xml version="1.0"?><Ableton><LiveSet><Tracks>
-  <AudioTrack Id="1"><Name><EffectiveName Value="Vox"/></Name><TrackGroupId Value="-1"/>
-    <TakeLanes><TakeLane><AudioClip><SampleRef><FileRef><Path Value="/x/take1.wav"/></FileRef></SampleRef></AudioClip></TakeLane></TakeLanes>
-  </AudioTrack>
-</Tracks></LiveSet></Ableton>"#;
+const TAKE_LANE_XML: &str = r#"<?xml version="1.0"?>
+<Ableton>
+  <LiveSet><Tracks>
+    <AudioTrack Id="1">
+      <Name><EffectiveName Value="Vox"/></Name>
+      <TrackGroupId Value="-1"/>
+      <TakeLanes>
+        <TakeLane>
+          <AudioClip>
+            <SampleRef>
+              <FileRef>
+                <Path Value="/x/take1.wav"/>
+              </FileRef>
+            </SampleRef>
+          </AudioClip>
+        </TakeLane>
+      </TakeLanes>
+    </AudioTrack>
+  </Tracks></LiveSet>
+</Ableton>"#;
 
-const SAMPLER_XML: &str = r#"<?xml version="1.0"?><Ableton><LiveSet><Tracks>
-  <MidiTrack Id="1"><Name><EffectiveName Value="Sampler"/></Name><TrackGroupId Value="-1"/>
-    <DeviceChain><OriginalSimpler><Player><MultiSampleMap><SampleParts><MultiSamplePart>
-      <SampleRef><FileRef><Path Value="/x/sampler.wav"/></FileRef></SampleRef>
-    </MultiSamplePart></SampleParts></MultiSampleMap></Player></OriginalSimpler></DeviceChain>
-  </MidiTrack>
-</Tracks></LiveSet></Ableton>"#;
+const SAMPLER_XML: &str = r#"<?xml version="1.0"?>
+<Ableton>
+  <LiveSet><Tracks>
+    <MidiTrack Id="1">
+      <Name><EffectiveName Value="Sampler"/></Name>
+      <TrackGroupId Value="-1"/>
+      <DeviceChain>
+        <OriginalSimpler>
+          <Player>
+            <MultiSampleMap>
+              <SampleParts>
+                <MultiSamplePart>
+                  <SampleRef>
+                    <FileRef>
+                      <Path Value="/x/sampler.wav"/>
+                    </FileRef>
+                  </SampleRef>
+                </MultiSamplePart>
+              </SampleParts>
+            </MultiSampleMap>
+          </Player>
+        </OriginalSimpler>
+      </DeviceChain>
+    </MidiTrack>
+  </Tracks></LiveSet>
+</Ableton>"#;
 
 fn write_project(tmp: &Path, name: &str, xml: &str) -> (std::path::PathBuf, std::path::PathBuf) {
     let dir = tmp.join(name);

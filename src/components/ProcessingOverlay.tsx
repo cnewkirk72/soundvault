@@ -27,13 +27,24 @@ interface DerivedProgress {
 
 function derive(events: ScanEvent[]): DerivedProgress {
   let p: DerivedProgress = {
-    projectsTotal: 0, projectsFound: 0, projectsParsed: 0, samplesFound: 0,
-    dedupTotal: 0, dedupProcessed: 0, copyTotal: 0, copyCopied: 0,
-    currentFilename: null, currentProjectName: null, parseErrors: 0, stage: "idle",
+    projectsTotal: 0,
+    projectsFound: 0,
+    projectsParsed: 0,
+    samplesFound: 0,
+    dedupTotal: 0,
+    dedupProcessed: 0,
+    copyTotal: 0,
+    copyCopied: 0,
+    currentFilename: null,
+    currentProjectName: null,
+    parseErrors: 0,
+    stage: "idle",
   };
   for (const ev of events) {
     switch (ev.kind) {
-      case "discovery_started": p.stage = "discovery"; break;
+      case "discovery_started":
+        p.stage = "discovery";
+        break;
       case "project_found":
         p.projectsTotal = ev.total;
         p.projectsFound += 1;
@@ -45,7 +56,9 @@ function derive(events: ScanEvent[]): DerivedProgress {
         p.samplesFound += ev.samples_found;
         p.currentProjectName = basename(ev.path);
         break;
-      case "parse_error": p.parseErrors += 1; break;
+      case "parse_error":
+        p.parseErrors += 1;
+        break;
       case "dedup_started":
         p.stage = "dedup";
         p.dedupTotal = ev.total_samples;
@@ -65,7 +78,8 @@ function derive(events: ScanEvent[]): DerivedProgress {
         p.copyCopied = ev.copied;
         p.currentFilename = ev.current_filename;
         break;
-      default: break;
+      default:
+        break;
     }
   }
   return p;
@@ -75,7 +89,9 @@ export default function ProcessingOverlay({ events, onCancel }: Props) {
   const p = useMemo(() => derive(events), [events]);
 
   const statusLine = useMemo(() => {
-    if (p.stage === "discovery") return `Discovering projects… (${p.projectsFound} found)`;
+    if (p.stage === "discovery") {
+      return `Discovering projects… (${p.projectsFound} found)`;
+    }
     if (p.stage === "parse") {
       const projectName = p.currentProjectName ?? "…";
       return `Parsing project ${p.projectsParsed} of ${p.projectsTotal}: ${truncateMiddle(projectName, 36)}`;
@@ -103,23 +119,43 @@ export default function ProcessingOverlay({ events, onCancel }: Props) {
 
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center sv-glass-overlay animate-fade-in">
-      <div role="dialog" aria-modal="true" aria-label="Scan in progress"
-        className="sv-card relative flex w-[480px] max-w-[90vw] flex-col items-center gap-5 px-7 py-7 animate-rise-in">
-        <button onClick={onCancel} aria-label="Cancel scan"
-          className="absolute left-3 top-3 flex h-7 w-7 items-center justify-center rounded-md text-ink-300 transition hover:bg-white/[0.05] hover:text-ink-50">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Scan in progress"
+        className="sv-card relative flex w-[480px] max-w-[90vw] flex-col items-center gap-5 px-7 py-7 animate-rise-in"
+      >
+        <button
+          onClick={onCancel}
+          aria-label="Cancel scan"
+          className="absolute left-3 top-3 flex h-7 w-7 items-center justify-center rounded-md text-ink-300 transition hover:bg-white/[0.05] hover:text-ink-50"
+        >
           <X className="h-4 w-4" />
         </button>
-        <ProcessingPulse totalProjects={p.projectsTotal} projectsParsed={p.projectsParsed} dedupRatio={dedupRatio} copyRatio={copyRatio} />
+
+        <ProcessingPulse
+          totalProjects={p.projectsTotal}
+          projectsParsed={p.projectsParsed}
+          dedupRatio={dedupRatio}
+          copyRatio={copyRatio}
+        />
+
         <div className="flex flex-col items-center gap-1.5 text-center">
           <div className="text-[13.5px] font-medium text-ink-50">{statusLine}</div>
-          {secondaryLine && <div className="text-[12px] text-ink-300">{secondaryLine}</div>}
+          {secondaryLine && (
+            <div className="text-[12px] text-ink-300">{secondaryLine}</div>
+          )}
           {p.parseErrors > 0 && (
             <div className="mt-1 text-[11px] text-amber-300/90">
               {p.parseErrors} project{p.parseErrors === 1 ? "" : "s"} skipped due to parse errors
             </div>
           )}
         </div>
-        <button onClick={onCancel} className="sv-button gap-2 h-9 px-4">
+
+        <button
+          onClick={onCancel}
+          className="sv-button gap-2 h-9 px-4"
+        >
           <Square className="h-3.5 w-3.5" />
           Stop
         </button>

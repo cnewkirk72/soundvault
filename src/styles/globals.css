@@ -2,10 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  :root { color-scheme: dark; }
+/* --- Soundvault base layer ---------------------------------------------- */
 
-  html, body, #root { height: 100%; }
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
 
   body {
     font-feature-settings: "ss01", "cv11", "cv02";
@@ -15,8 +23,14 @@
     overflow: hidden;
   }
 
-  input, textarea, [contenteditable] { user-select: text; }
+  /* Keep text inputs selectable. */
+  input,
+  textarea,
+  [contenteditable] {
+    user-select: text;
+  }
 
+  /* Match dark/light mode at the body level so titlebar overlay blends. */
   .dark body {
     background-color: theme("colors.ink.950");
     color: theme("colors.ink.50");
@@ -26,8 +40,14 @@
     color: theme("colors.ink.900");
   }
 
-  ::-webkit-scrollbar { width: 10px; height: 10px; }
-  ::-webkit-scrollbar-track { background: transparent; }
+  /* Custom scrollbar tuned to brand. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
   ::-webkit-scrollbar-thumb {
     background: rgba(155, 164, 255, 0.18);
     border-radius: 999px;
@@ -40,16 +60,21 @@
   }
 }
 
+/* --- Component utilities ------------------------------------------------ */
+
 @layer components {
   .sv-surface {
     @apply rounded-glass border border-white/[0.04] bg-ink-900/70
            backdrop-blur-xl shadow-glass;
   }
+
   :root:not(.dark) .sv-surface {
     @apply bg-white/85 border-ink-900/5 shadow-glass-light;
   }
 
-  .sv-card { @apply sv-surface px-4 py-3.5; }
+  .sv-card {
+    @apply sv-surface px-4 py-3.5;
+  }
 
   .sv-input {
     @apply h-9 w-full rounded-lg border border-white/5 bg-ink-800/60 px-3
@@ -85,29 +110,63 @@
     @apply sv-button border-transparent bg-transparent hover:bg-white/[0.04];
   }
 
-  .sv-row { @apply grid grid-cols-[auto_1fr] items-center gap-3; }
-  .sv-label {
-    @apply text-[11px] font-medium uppercase tracking-[0.08em] text-ink-300;
+  .sv-row {
+    @apply grid grid-cols-[auto_1fr] items-center gap-3;
   }
-  .sv-divider { @apply h-px w-full bg-white/[0.04]; }
-  :root:not(.dark) .sv-divider { @apply bg-ink-900/10; }
 
-  .sv-titlebar-spacer { -webkit-app-region: drag; height: 28px; }
-  .sv-no-drag { -webkit-app-region: no-drag; }
+  .sv-label {
+    @apply text-[11px] font-medium uppercase tracking-[0.08em]
+           text-ink-300;
+  }
+
+  .sv-divider {
+    @apply h-px w-full bg-white/[0.04];
+  }
+  :root:not(.dark) .sv-divider {
+    @apply bg-ink-900/10;
+  }
+
+  .sv-titlebar-spacer {
+    /* Reserve space under macOS overlay title bar. */
+    -webkit-app-region: drag;
+    height: 28px;
+  }
+
+  .sv-no-drag {
+    -webkit-app-region: no-drag;
+  }
 }
+
+/* --- Animations --------------------------------------------------------- */
 
 @layer utilities {
   .sv-glass-overlay {
     background:
-      radial-gradient(1200px 600px at 20% -10%, rgba(122, 131, 245, 0.16), transparent 60%),
-      radial-gradient(800px 480px at 110% 110%, rgba(124, 213, 230, 0.10), transparent 60%),
+      radial-gradient(
+        1200px 600px at 20% -10%,
+        rgba(122, 131, 245, 0.16),
+        transparent 60%
+      ),
+      radial-gradient(
+        800px 480px at 110% 110%,
+        rgba(124, 213, 230, 0.10),
+        transparent 60%
+      ),
       rgba(8, 8, 13, 0.7);
     backdrop-filter: blur(18px);
   }
   :root:not(.dark) .sv-glass-overlay {
     background:
-      radial-gradient(1200px 600px at 20% -10%, rgba(122, 131, 245, 0.22), transparent 60%),
-      radial-gradient(800px 480px at 110% 110%, rgba(124, 213, 230, 0.15), transparent 60%),
+      radial-gradient(
+        1200px 600px at 20% -10%,
+        rgba(122, 131, 245, 0.22),
+        transparent 60%
+      ),
+      radial-gradient(
+        800px 480px at 110% 110%,
+        rgba(124, 213, 230, 0.15),
+        transparent 60%
+      ),
       rgba(244, 245, 250, 0.8);
   }
 }
