@@ -1,0 +1,26 @@
+{
+  "Drums": {
+    "Kicks & Bassdrums": ["kick", "bd", "bassdrum"],
+    "Snares, Claps, & Rims": {
+      "Snares": ["snare", "snr", "sd"],
+      "Claps": ["clap", "clp", "cp"],
+      "Rims": ["rim", "rimshot", "sidestick", "stick"]
+    },
+    "Hats": ["hat", "hh", "hihat", "openhat", "closedhat", "ch", "oh"],
+    "Toms": ["tom", "lowtom", "midtom", "hightom"],
+    "Percs": [
+      "perc",
+      "percussion",
+      "shaker",
+      "tambourine",
+      "bell",
+      "block",
+      "cowbell",
+      "conga",
+      "bongo"
+    ],
+    "Shakers": ["shaker", "shake", "maraca"],
+    "Fills": ["fill"],
+    "Tops": ["top", "loop_top", "drumtop", "overhead"]
+  }
+}
