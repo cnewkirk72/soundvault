@@ -169,3 +169,117 @@ pub fn normalize(s: &str) -> String {
         .trim()
         .to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::taxonomy::Taxonomy;
+    use std::path::PathBuf;
+
+    fn make_sample(filename: &str, track: Option<&str>, group: Vec<&str>) -> SampleOccurrence {
+        SampleOccurrence {
+            path: PathBuf::from(format!("/x/{}", filename)),
+            filename: filename.to_string(),
+            declared_size: None,
+            declared_crc: None,
+            original_path: None,
+            track_name: track.map(|s| s.to_string()),
+            group_path: group.into_iter().map(|s| s.to_string()).collect(),
+            project_name: "p".to_string(),
+            project_root: PathBuf::from("/p"),
+            context: crate::parse::SampleContext::AudioClip,
+        }
+    }
+
+    fn all_selected(t: &Taxonomy) -> Vec<String> {
+        t.flatten().into_iter().map(|c| c.path).collect()
+    }
+
+    #[test]
+    fn filename_keyword_match_bd() {
+        let t = Taxonomy::default_bundled().unwrap();
+        let cats = t.flatten();
+        let s = make_sample("001 BD-Dark.wav", None, vec![]);
+        let result = classify(
+            &s,
+            &all_selected(&t),
+            &cats,
+            MatchMode::AutoDetect,
+            &ManualKeywords::default(),
+        );
+        assert_eq!(result.as_deref(), Some("Drums / Kicks & Bassdrums"));
+    }
+
+    #[test]
+    fn track_name_fallback_for_unrecognizable_filename() {
+        let t = Taxonomy::default_bundled().unwrap();
+        let cats = t.flatten();
+        let s = make_sample("bdj_clk.wav", Some("CLAP"), vec![]);
+        let result = classify(
+            &s,
+            &all_selected(&t),
+            &cats,
+            MatchMode::AutoDetect,
+            &ManualKeywords::default(),
+        );
+        assert_eq!(
+            result.as_deref(),
+            Some("Drums / Snares, Claps, & Rims / Claps")
+        );
+    }
+
+    #[test]
+    fn use_groups_innermost_wins() {
+        let t = Taxonomy::default_bundled().unwrap();
+        let cats = t.flatten();
+        let s = make_sample(
+            "anything_random.wav",
+            Some("Lead"),
+            vec!["DRUMS", "CLAP"],
+        );
+        let result = classify(
+            &s,
+            &all_selected(&t),
+            &cats,
+            MatchMode::UseGroups,
+            &ManualKeywords::default(),
+        );
+        assert_eq!(
+            result.as_deref(),
+            Some("Drums / Snares, Claps, & Rims / Claps")
+        );
+    }
+
+    #[test]
+    fn ch_matches_hats() {
+        let t = Taxonomy::default_bundled().unwrap();
+        let cats = t.flatten();
+        let s = make_sample("606 CH.wav", None, vec![]);
+        let result = classify(
+            &s,
+            &all_selected(&t),
+            &cats,
+            MatchMode::AutoDetect,
+            &ManualKeywords::default(),
+        );
+        assert_eq!(result.as_deref(), Some("Drums / Hats"));
+    }
+
+    #[test]
+    fn longest_match_wins_sidestick() {
+        let t = Taxonomy::default_bundled().unwrap();
+        let cats = t.flatten();
+        let s = make_sample("LiquidGold_sidestick_SP_01.wav", None, vec![]);
+        let result = classify(
+            &s,
+            &all_selected(&t),
+            &cats,
+            MatchMode::AutoDetect,
+            &ManualKeywords::default(),
+        );
+        assert_eq!(
+            result.as_deref(),
+            Some("Drums / Snares, Claps, & Rims / Rims")
+        );
+    }
+}
